@@ -70,7 +70,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     pico_stdlib
     pico_btstack_ble
     pico_btstack_cyw43
-    pico_cyw43_arch_none
+    pico_cyw43_arch_sys_freertos
 )
 
 pico_btstack_make_gatt_header(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/mygatt.gatt")

@@ -8,15 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <btstack_run_loop.h>
-#include <pico/cyw43_arch.h>
 
 #include "pico/stdlib.h"
 #include "pico/sem.h"
-#include "pico/multicore.h"
 #include "hardware/pio.h"
 #include "hardware/dma.h"
 #include "hardware/irq.h"
-#include "ble.h"
 #include "ws2812.pio.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -33,6 +30,12 @@
 // horrible temporary hack to avoid changing pattern code
 static uint8_t *current_strip_out;
 static bool current_strip_4color;
+    
+static uint8_t DMA_CHANNEL;
+static uint8_t DMA_CB_CHANNEL;
+static uint8_t DMA_CHANNEL_MASK;
+static uint8_t DMA_CB_CHANNEL_MASK;
+static uint8_t DMA_CB_CHANNELS_MASK;
 
 static inline void put_pixel(uint32_t pixel_grb) {
     *current_strip_out++ = pixel_grb & 0xffu;
@@ -213,14 +216,6 @@ strip_t *strips[] = {
         &strip1,
 };
 
-// bit plane content dma channel
-#define DMA_CHANNEL 0
-// chain channel for configuring main dma channel to output from disjoint 8 word fragments of memory
-#define DMA_CB_CHANNEL 1
-
-#define DMA_CHANNEL_MASK (1u << DMA_CHANNEL)
-#define DMA_CB_CHANNEL_MASK (1u << DMA_CB_CHANNEL)
-#define DMA_CHANNELS_MASK (DMA_CHANNEL_MASK | DMA_CB_CHANNEL_MASK)
 
 // start of each value fragment (+1 for NULL terminator)
 static uintptr_t fragment_start[NUM_PIXELS * 4 + 1];
@@ -247,8 +242,15 @@ void __isr dma_complete_handler() {
     }
 }
 
-void dma_init(PIO pio, uint sm) {
-    dma_claim_mask(DMA_CHANNELS_MASK);
+uint dma_init(PIO pio, uint sm) {
+    DMA_CHANNEL = dma_claim_unused_channel(true);
+    DMA_CB_CHANNEL = dma_claim_unused_channel(true);
+    printf("DMA initialized, channel %u\n", DMA_CHANNEL);
+    printf("DMA CB initialized, channel %u\n", DMA_CB_CHANNEL);
+    
+    DMA_CHANNEL_MASK = 1 << DMA_CHANNEL;
+    DMA_CB_CHANNEL_MASK = 1 << DMA_CB_CHANNEL;
+    DMA_CB_CHANNELS_MASK = DMA_CHANNEL_MASK | DMA_CB_CHANNEL_MASK;
 
     // main DMA channel outputs 8 word fragments, and then chains back to the chain channel
     dma_channel_config channel_config = dma_channel_get_default_config(DMA_CHANNEL);
@@ -275,9 +277,11 @@ void dma_init(PIO pio, uint sm) {
     irq_set_exclusive_handler(DMA_IRQ_0, dma_complete_handler);
     dma_channel_set_irq0_enabled(DMA_CHANNEL, true);
     irq_set_enabled(DMA_IRQ_0, true);
+
+    return DMA_CB_CHANNEL;
 }
 
-void output_strips_dma(value_bits_t *bits, uint value_length) {
+void output_strips_dma(value_bits_t *bits, uint value_length, uint DMA_CB_CHANNEL) {
     for (uint i = 0; i < value_length; i++) {
         fragment_start[i] = (uintptr_t) bits[i].planes; // MSB first
     }
@@ -286,7 +290,7 @@ void output_strips_dma(value_bits_t *bits, uint value_length) {
 }
 
 
-void ws2812_run_loop_execute() {
+void ws2812_run_loop_execute(uint DMA_CB_CHANNEL) {
     int t = 0;
     while (1) {
         int pat = rand() % count_of(pattern_table);
@@ -307,7 +311,7 @@ void ws2812_run_loop_execute() {
             transform_strips(strips, count_of(strips), colors, NUM_PIXELS * 4, brightness);
             dither_values(colors, states[current], states[current ^ 1], NUM_PIXELS * 4);
             sem_acquire_blocking(&reset_delay_complete_sem);
-            output_strips_dma(states[current], NUM_PIXELS * 4);
+            output_strips_dma(states[current], NUM_PIXELS * 4, DMA_CB_CHANNEL);
 
             current ^= 1;
             t += dir;
@@ -323,7 +327,7 @@ void ws2812_task() {
     PIO pio;
     uint sm;
     uint offset;
-
+    
     // This will find a free pio and state machine for our program and load it for us
     // We use pio_claim_free_sm_and_add_program_for_gpio_range (for_gpio_range variant)
     // so we will get a PIO instance suitable for addressing gpios >= 32 if needed and supported by the hardware
@@ -333,9 +337,9 @@ void ws2812_task() {
     ws2812_parallel_program_init(pio, sm, offset, WS2812_PIN_BASE, count_of(strips), 800000);
 
     sem_init(&reset_delay_complete_sem, 1, 1); // initially posted so we don't block first time
-    dma_init(pio, sm);
+    uint const DMA_CB_CHANNEL = dma_init(pio, sm);
    
-    ws2812_run_loop_execute();
+    ws2812_run_loop_execute(DMA_CB_CHANNEL);
     
     pio_remove_program_and_unclaim_sm(&ws2812_parallel_program, pio, sm, offset);
 }

@@ -74,6 +74,12 @@ static void configure_advertising() {
 
 static void setup_ble()
 {
+    int result = cyw43_arch_init();
+    if (result) {
+        printf("Failed to initialize CYW43_ARCH: %d\n", result);
+        while (true);
+    }
+
     l2cap_init();
     sm_init();
     att_server_init(profile_data, NULL, NULL);
@@ -81,7 +87,7 @@ static void setup_ble()
 
     configure_advertising();
 
-    int result = hci_power_control(HCI_POWER_ON);
+    result = hci_power_control(HCI_POWER_ON);
     if(result) {
         printf("Error enabling Bluetooth: %d\n", result);
     }
@@ -91,10 +97,7 @@ static void server_task(void *pvParameters)
 {
     setup_ble();
 
-    while (true)
-    {
-        btstack_run_loop_execute(); /* does not return */
-    }
+    btstack_run_loop_execute(); /* does not return */
 }
 
 void ble_init(void)
