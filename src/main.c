@@ -14,7 +14,6 @@ int main() {
 
     printf("Starting Jem's Disco!\n");
     
-    
     ble_init();
     ws2812_init();
     vTaskStartScheduler();

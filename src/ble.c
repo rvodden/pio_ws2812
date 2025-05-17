@@ -13,6 +13,7 @@
 static btstack_timer_source_t heartbeat;
 static hci_con_handle_t con_handle = HCI_CON_HANDLE_INVALID;
 static btstack_context_callback_registration_t send_request;
+static btstack_packet_callback_registration_t hci_event_callback_registration;
 
 const uint8_t adv_data[] = {
     // Flags general discoverable, BR/EDR not supported
@@ -24,41 +25,28 @@ const uint8_t adv_data[] = {
 };
 const uint8_t adv_data_len = sizeof(adv_data);
 
-static void nordic_spp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size)
-{
+static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+    UNUSED(size);
     UNUSED(channel);
-    switch (packet_type){
-        case HCI_EVENT_PACKET:
-            if (hci_event_packet_get_type(packet) != HCI_EVENT_GATTSERVICE_META) break;
-            switch (hci_event_gattservice_meta_get_subevent_code(packet)){
-                case GATTSERVICE_SUBEVENT_SPP_SERVICE_CONNECTED:
-                    con_handle = gattservice_subevent_spp_service_connected_get_con_handle(packet);
-                    printf("Nordic SPP connected, con handle 0x%04x\n", con_handle);
-                    break;
-                case GATTSERVICE_SUBEVENT_SPP_SERVICE_DISCONNECTED:
-                    printf("Nordic SPP disconnected, con handle 0x%04x\n", con_handle);
-                    con_handle = HCI_CON_HANDLE_INVALID;
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case RFCOMM_DATA_PACKET:
-            printf("RECV: ");
-            printf_hexdump(packet, size);
-            switch(packet[0]) {
-                case 1:
-                    printf("Colour Command\n");
-                    printf("Red: %u, Green: %u, Blue: %u\n", packet[1], packet[2], packet[3]);
-                    break;
-                default:
-                    printf("Unknown Command\n");
-                    break;
-            }
+    bd_addr_t local_addr;
+    if (packet_type != HCI_EVENT_PACKET) return;
+    switch(hci_event_packet_get_type(packet)){
+        case BTSTACK_EVENT_STATE:
+            if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
+            gap_local_bd_addr(local_addr);
+            printf("BTstack up and running on %s.\n", bd_addr_to_str(local_addr));
             break;
         default:
             break;
-    };
+    }
+}
+
+static void nordic_spp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size)
+{
+    UNUSED(packet_type);
+    UNUSED(channel);
+    UNUSED(packet);
+    UNUSED(size);
 }
 
 static void configure_advertising() {
@@ -79,6 +67,10 @@ static void setup_ble()
         printf("Failed to initialize CYW43_ARCH: %d\n", result);
         while (true);
     }
+    printf("CYW43_ARCH initialized\n");
+
+    hci_event_callback_registration.callback = &packet_handler;
+    hci_add_event_handler(&hci_event_callback_registration);
 
     l2cap_init();
     sm_init();
@@ -95,9 +87,10 @@ static void setup_ble()
 
 static void server_task(void *pvParameters)
 {
+    printf("BLE Task has started\n");
     setup_ble();
-
-    btstack_run_loop_execute(); /* does not return */
+    // btstack_run_loop_execute(); /* does not return */
+    vTaskDelete( NULL );
 }
 
 void ble_init(void)
