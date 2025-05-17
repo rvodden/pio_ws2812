@@ -95,5 +95,5 @@ static void server_task(void *pvParameters)
 
 void ble_init(void)
 {
-    int result = xTaskCreate(server_task, "BLEserver", 2048, NULL, tskIDLE_PRIORITY + 2, NULL);
+    int result = xTaskCreate(server_task, "BLEserver", 2048, NULL, tskIDLE_PRIORITY + 3, NULL);
 }

@@ -134,9 +134,9 @@
 
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY 16
 
-/* SMP port only */
-#define configNUM_CORES                         2
-#define configTICK_CORE                         0
-#define configRUN_MULTIPLE_PRIORITIES           1
+// /* SMP port only */
+// #define configNUM_CORES                         2
+// #define configTICK_CORE                         0
+// #define configRUN_MULTIPLE_PRIORITIES           1
 
 #endif /* FREERTOS_CONFIG_H */
