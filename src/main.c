@@ -6,6 +6,9 @@
 #include <FreeRTOS.h>
 #include <task.h>
 
+void ble_init();
+void ws2812_init();
+
 void vBlinkTask() {                                             
     while (1) {                                                            
         printf("blink\n");
@@ -18,17 +21,17 @@ void vBlinkTask() {
 
 int main() {
     stdio_init_all();
-    cyw43_arch_init();
+
+    printf("Starting Jem's Disco!\n");
     
-    // while (1) {                                                            
-    //     printf("blink\n");
-    //     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
-    //     sleep_ms(100);                                            
-    //     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);        
-    //     sleep_ms(100);                                      
-    // }                     
+    int result = cyw43_arch_init();
+    if (result) {
+        printf("Failed to initialize CYW43_ARCH: %d\n", result);
+        while (true);
+    }
     
-    xTaskCreate(vBlinkTask, "Blink Task", 1024, NULL, 1, NULL);
+    ble_init();
+    ws2812_init();
     vTaskStartScheduler();
     
     return 0;

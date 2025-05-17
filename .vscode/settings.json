@@ -17,6 +17,18 @@
     "cmake.generator": "Ninja",
     "cmake.cmakePath": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
     "C_Cpp.debugShortcut": false,
+    "C_Cpp.files.exclude": {
+        "${workspaceFolder}/build/**": true,
+    },
+    "files.watcherExclude": {
+        "${workspaceFolder}/build/**": true,
+    },
+    "search.exclude": {
+        "${workspaceFolder}/build/**": true,
+    },
+    "files.exclude": {
+        "${workspaceFolder}/build/**": true,
+    },
     "terminal.integrated.env.windows": {
         "PICO_SDK_PATH": "${env:USERPROFILE}/.pico-sdk/sdk/2.1.1",
         "PICO_TOOLCHAIN_PATH": "${env:USERPROFILE}/.pico-sdk/toolchain/14_2_Rel1",

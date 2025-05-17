@@ -58,18 +58,18 @@
 #define configUSE_TICKLESS_IDLE                 0
 #define configCPU_CLOCK_HZ                      150000000   // 150MHz for RP2350
 #define configTICK_RATE_HZ                      1000        // FreeRTOS beats per second
-#define configMAX_PRIORITIES                    5           // Max number of priority values (0-24)
-#define configMINIMAL_STACK_SIZE                128
+#define configMAX_PRIORITIES                    32          // Max number of priority values (0-24)
+#define configMINIMAL_STACK_SIZE                256
 #define configMAX_TASK_NAME_LEN                 16
 #define configUSE_16_BIT_TICKS                  0
 #define configIDLE_SHOULD_YIELD                 1
 #define configUSE_TASK_NOTIFICATIONS            1
 #define configTASK_NOTIFICATION_ARRAY_ENTRIES   3
-#define configUSE_MUTEXES                       0
-#define configUSE_RECURSIVE_MUTEXES             0
-#define configUSE_COUNTING_SEMAPHORES           0
-#define configQUEUE_REGISTRY_SIZE               10
-#define configUSE_QUEUE_SETS                    0
+#define configUSE_MUTEXES                       1
+#define configUSE_RECURSIVE_MUTEXES             1
+#define configUSE_COUNTING_SEMAPHORES           1
+#define configQUEUE_REGISTRY_SIZE               8
+#define configUSE_QUEUE_SETS                    1
 #define configUSE_NEWLIB_REENTRANT              0
 #define configENABLE_BACKWARD_COMPATIBILITY     0
 #define configNUM_THREAD_LOCAL_STORAGE_POINTERS 5
@@ -83,6 +83,7 @@
 #define configSUPPORT_STATIC_ALLOCATION         0
 #define configSUPPORT_DYNAMIC_ALLOCATION        1           // Get FreeRTOS to allocation task memory
 #define configAPPLICATION_ALLOCATED_HEAP        0
+#define configTOTAL_HEAP_SIZE                   ( 260 * 1024 )
 
 /* Hook function related definitions. */
 #define configUSE_IDLE_HOOK                     0
@@ -93,7 +94,7 @@
 
 /* Run time and task stats gathering related definitions. */
 #define configGENERATE_RUN_TIME_STATS           0
-#define configUSE_TRACE_FACILITY                0
+#define configUSE_TRACE_FACILITY                1
 #define configUSE_STATS_FORMATTING_FUNCTIONS    0
 
 /* Co-routine related definitions. */
@@ -102,9 +103,9 @@
 
 /* Software timer related definitions. */
 #define configUSE_TIMERS                        1
-#define configTIMER_TASK_PRIORITY               3
+#define configTIMER_TASK_PRIORITY               ( configMAX_PRIORITIES - 1 )
 #define configTIMER_QUEUE_LENGTH                10
-#define configTIMER_TASK_STACK_DEPTH            256
+#define configTIMER_TASK_STACK_DEPTH            1024
 
 /* Define to trap errors during development. */
 #define configASSERT( x )
@@ -130,7 +131,11 @@
 
 /* A header file that defines trace macro can be included here. */
 
-#define configTOTAL_HEAP_SIZE 256000
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY 16
+
+/* SMP port only */
+#define configNUM_CORES                         2
+#define configTICK_CORE                         0
+#define configRUN_MULTIPLE_PRIORITIES           1
 
 #endif /* FREERTOS_CONFIG_H */

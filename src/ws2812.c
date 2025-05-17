@@ -18,6 +18,8 @@
 #include "hardware/irq.h"
 #include "ble.h"
 #include "ws2812.pio.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define FRAC_BITS 4
 #define NUM_PIXELS 102
@@ -27,8 +29,6 @@
 #if WS2812_PIN_BASE >= NUM_BANK0_GPIOS
 #error Attempting to use a pin>=32 on a platform that does not support it
 #endif
-
-void btstack_init();
 
 // horrible temporary hack to avoid changing pattern code
 static uint8_t *current_strip_out;
@@ -315,19 +315,11 @@ void ws2812_run_loop_execute() {
             // if (brightness == (0x20 << FRAC_BITS)) brightness = 0;
         }
         memset(&states, 0, sizeof(states)); // clear out errors
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
-int main() {
-    stdio_init_all();
-    
-    // if (cyw43_arch_init()) {
-    //     printf("failed to initialise cyw43_arch\n");
-    //     return -1;
-    // }
-
-    // btstack_init();
-
+void ws2812_task() {
     PIO pio;
     uint sm;
     uint offset;
@@ -344,9 +336,10 @@ int main() {
     dma_init(pio, sm);
    
     ws2812_run_loop_execute();
-    // multicore_launch_core1(ws2812_run_loop_execute);
-    // btstack_run_loop_execute();
     
-    // This will free resources and unload our program
     pio_remove_program_and_unclaim_sm(&ws2812_parallel_program, pio, sm, offset);
+}
+
+void ws2812_init() {
+    int result = xTaskCreate(ws2812_task, "WS2812 task", 2048, NULL, tskIDLE_PRIORITY + 2, NULL);
 }

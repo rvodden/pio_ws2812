@@ -27,7 +27,6 @@ endif()
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
 include(pico_sdk_import.cmake)
 
-
 include(FetchContent)
 FetchContent_GetProperties(freertos_kernel)
 if (NOT freertos_kernel_POPULATED) 
@@ -41,67 +40,43 @@ if (NOT freertos_kernel_POPULATED)
     add_library(freertos_config INTERFACE)
     target_include_directories(freertos_config INTERFACE ${CMAKE_SOURCE_DIR}/include)
     message(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/Community-Supported-Ports/GCC/RP2350_ARM_NTZ)
-    add_subdirectory(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/Community-Supported-Ports/GCC/RP2350_ARM_NTZ)
+    add_subdirectory(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/Community-Supported-Ports/GCC/RP2350_ARM_NTZ SYSTEM)
 endif()
 
 
-project(pio_ws2812 C CXX ASM)
+project(jems_disco C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-
-add_executable(pio_ws2812_parallel)
-
-target_sources(pio_ws2812_parallel 
-    PRIVATE 
-    src/ws2812_parallel.c 
-    src/gatt_counter.c
+add_executable(${PROJECT_NAME})
+target_sources(${PROJECT_NAME} PRIVATE 
+    src/main.c
+    src/ble.c
+    src/ws2812.c
 )
-
-target_compile_definitions(pio_ws2812_parallel PUBLIC
+target_compile_definitions(${PROJECT_NAME} PUBLIC
     CYW43_LWIP=0
+    CYW43_ENABLE_BLUETOOTH=1
     WANT_HCI_DUMP=1
 )
-    
-target_include_directories(pio_ws2812_parallel PUBLIC
+target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}/generated
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-
-target_link_libraries(pio_ws2812_parallel
-    PRIVATE 
-    pico_stdlib
-    hardware_pio
-    hardware_dma
-    pico_btstack_ble
-    pico_btstack_cyw43
-    pico_cyw43_arch_none 
-)
-
-pico_generate_pio_header(pio_ws2812_parallel ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
-pico_btstack_make_gatt_header(pio_ws2812_parallel PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/mygatt.gatt")
-
-# enable uart debug
-pico_enable_stdio_uart(pio_ws2812_parallel 1)
-pico_enable_stdio_usb(pio_ws2812_parallel 0)
-
-pico_add_extra_outputs(pio_ws2812_parallel)
-
-add_executable(blink)
-target_sources(blink PRIVATE src/blink.c)
-target_compile_definitions(blink PUBLIC
-    CYW43_LWIP=0
-    WANT_HCI_DUMP=1
-)
-target_link_libraries(blink PUBLIC
+target_link_libraries(${PROJECT_NAME} PUBLIC
     FreeRTOS-Kernel-Heap4
     freertos_config
     pico_stdlib
+    pico_btstack_ble
+    pico_btstack_cyw43
     pico_cyw43_arch_none
 )
 
-pico_enable_stdio_uart(blink 1)
-pico_enable_stdio_usb(blink 0)
+pico_btstack_make_gatt_header(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/mygatt.gatt")
+pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
-pico_add_extra_outputs(blink)
+pico_enable_stdio_uart(${PROJECT_NAME} 1)
+pico_enable_stdio_usb(${PROJECT_NAME} 0)
+
+pico_add_extra_outputs(${PROJECT_NAME})
