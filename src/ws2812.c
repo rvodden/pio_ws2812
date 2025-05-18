@@ -7,16 +7,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <btstack_run_loop.h>
 
 #include <pico/stdlib.h>
 #include <hardware/pio.h>
 #include <hardware/dma.h>
 #include <hardware/irq.h>
 #include <ws2812.pio.h>
+
 #include <FreeRTOS.h>
 #include <task.h>
 #include <semphr.h>
+#include <timers.h>
+
+#include "patterns.h"
 
 #define FRAC_BITS 4
 #define NUM_PIXELS 102
@@ -27,111 +30,12 @@
 #error Attempting to use a pin>=32 on a platform that does not support it
 #endif
 
-// horrible temporary hack to avoid changing pattern code
-static uint8_t *current_strip_out;
-static bool current_strip_4color;
-    
 static uint8_t DMA_CHANNEL;
 static uint8_t DMA_CB_CHANNEL;
 static uint8_t DMA_CHANNEL_MASK;
 static uint8_t DMA_CB_CHANNEL_MASK;
 static uint8_t DMA_CB_CHANNELS_MASK;
 
-static inline void put_pixel(uint32_t pixel_grb) {
-    *current_strip_out++ = pixel_grb & 0xffu;
-    *current_strip_out++ = (pixel_grb >> 8u) & 0xffu;
-    *current_strip_out++ = (pixel_grb >> 16u) & 0xffu;
-    if (current_strip_4color) {
-        *current_strip_out++ = 0; // todo adjust?
-    }
-}
-
-static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
-    return
-            ((uint32_t) (r) << 8) |
-            ((uint32_t) (g) << 16) |
-            (uint32_t) (b);
-}
-
-void pattern_snakes(uint len, uint t) {
-    for (uint i = 0; i < len; ++i) {
-        uint x = (i + (t >> 1)) % 64;
-        if (x < 10)
-            put_pixel(urgb_u32(0xff, 0, 0));
-        else if (x >= 15 && x < 25)
-            put_pixel(urgb_u32(0, 0xff, 0));
-        else if (x >= 30 && x < 40)
-            put_pixel(urgb_u32(0, 0, 0xff));
-        else
-            put_pixel(0);
-    }
-}
-
-void pattern_random(uint len, uint t) {
-    if (t % 8)
-        return;
-    for (uint i = 0; i < len; ++i)
-        put_pixel(rand());
-}
-
-void pattern_sparkle(uint len, uint t) {
-    if (t % 8)
-        return;
-    for (uint i = 0; i < len; ++i)
-        put_pixel(rand() % 16 ? 0 : 0xffffffff);
-}
-
-void pattern_greys(uint len, uint t) {
-    uint max = 100; // let's not draw too much current!
-    t %= max;
-    for (uint i = 0; i < len; ++i) {
-        put_pixel(t * 0x10101);
-        if (++t >= max) t = 0;
-    }
-}
-
-void pattern_solid(uint len, uint t) {
-    t = 1;
-    for (uint i = 0; i < len; ++i) {
-        put_pixel(t * 0x10101);
-    }
-}
-
-int level = 8;
-
-void pattern_fade(uint len, uint t) {
-    uint shift = 4;
-
-    uint max = 16; // let's not draw too much current!
-    max <<= shift;
-
-    uint slow_t = t / 32;
-    slow_t = level;
-    slow_t %= max;
-
-    static int error = 0;
-    slow_t += error;
-    error = slow_t & ((1u << shift) - 1);
-    slow_t >>= shift;
-    slow_t *= 0x010101;
-
-    for (uint i = 0; i < len; ++i) {
-        put_pixel(slow_t);
-    }
-}
-
-typedef void (*pattern)(uint len, uint t);
-const struct {
-    pattern pat;
-    const char *name;
-} pattern_table[] = {
-        {pattern_snakes,  "Snakes!"},
-        {pattern_random,  "Random data"},
-        {pattern_sparkle, "Sparkles"},
-        {pattern_greys,   "Greys"},
-        // {pattern_solid,  "Solid!"},
-        // {pattern_fade, "Fade"},
-};
 
 #define VALUE_PLANE_COUNT (8 + FRAC_BITS)
 // we store value (8 bits + fractional bits of a single color (R/G/B/W) value) for multiple
@@ -144,6 +48,7 @@ typedef struct {
 // Add FRAC_BITS planes of e to s and store in d
 void add_error(value_bits_t *d, const value_bits_t *s, const value_bits_t *e) {
     uint32_t carry_plane = 0;
+    
     // add the FRAC_BITS low planes
     for (int p = VALUE_PLANE_COUNT - 1; p >= 8; p--) {
         uint32_t e_plane = e->planes[p];
@@ -151,6 +56,7 @@ void add_error(value_bits_t *d, const value_bits_t *s, const value_bits_t *e) {
         d->planes[p] = (e_plane ^ s_plane) ^ carry_plane;
         carry_plane = (e_plane & s_plane) | (carry_plane & (s_plane ^ e_plane));
     }
+
     // then just ripple carry through the non fractional bits
     for (int p = 7; p >= 0; p--) {
         uint32_t s_plane = s->planes[p];
@@ -222,14 +128,13 @@ static uintptr_t fragment_start[NUM_PIXELS * 4 + 1];
 
 // posted when it is safe to output a new set of values
 static SemaphoreHandle_t reset_delay_complete_sem;
-// alarm handle for handling delay
-alarm_id_t reset_delay_alarm_id;
 
-int64_t reset_delay_complete(__unused alarm_id_t id, __unused void *user_data) {
+// alarm handle for handling delay
+TimerHandle_t reset_delay_alarm_id;
+
+void reset_delay_complete(__unused TimerHandle_t xTimer) {
     reset_delay_alarm_id = 0;
     xSemaphoreGive(reset_delay_complete_sem);
-    // no repeat
-    return 0;
 }
 
 void __isr dma_complete_handler() {
@@ -237,16 +142,15 @@ void __isr dma_complete_handler() {
         // clear IRQ
         dma_hw->ints0 = DMA_CHANNEL_MASK;
         // when the dma is complete we start the reset delay timer
-        if (reset_delay_alarm_id) cancel_alarm(reset_delay_alarm_id);
-        reset_delay_alarm_id = add_alarm_in_us(10000, reset_delay_complete, NULL, true);
+        xTimerStartFromISR(reset_delay_alarm_id, 0);
     }
 }
 
 void dma_init(PIO pio, uint sm) {
-    // DMA_CHANNEL = dma_claim_unused_channel(true);
-    // DMA_CB_CHANNEL = dma_claim_unused_channel(true);
-    DMA_CHANNEL = 2;
-    DMA_CB_CHANNEL = 3;
+    DMA_CHANNEL = dma_claim_unused_channel(true);
+    DMA_CB_CHANNEL = dma_claim_unused_channel(true);
+    // DMA_CHANNEL = 2;
+    // DMA_CB_CHANNEL = 3;
     printf("DMA initialized, channel %u\n", DMA_CHANNEL);
     printf("DMA CB initialized, channel %u\n", DMA_CB_CHANNEL);
     
@@ -254,7 +158,7 @@ void dma_init(PIO pio, uint sm) {
     DMA_CB_CHANNEL_MASK = 1 << DMA_CB_CHANNEL;
     DMA_CB_CHANNELS_MASK = DMA_CHANNEL_MASK | DMA_CB_CHANNEL_MASK;
 
-    // main DMA channel outputs 8 word fragments, and then chains back to the chain channel
+    // main DMA channel outputs 8 word fragmenxTimerCreate);
     dma_channel_config channel_config = dma_channel_get_default_config(DMA_CHANNEL);
     channel_config_set_dreq(&channel_config, pio_get_dreq(pio, sm, true));
     channel_config_set_chain_to(&channel_config, DMA_CB_CHANNEL);
@@ -293,8 +197,11 @@ void output_strips_dma(value_bits_t *bits, uint value_length, uint DMA_CB_CHANNE
 
 void ws2812_run_loop_execute() {
     int t = 0;
+    uint8_t *current_strip_out;
+    bool current_strip_4color;
+    
     while (1) {
-        int pat = rand() % count_of(pattern_table);
+        int pat = rand() % pattern_count;
         int dir = (rand() >> 30) & 1 ? 1 : -1;
         // if (rand() & 1) dir = 0;
         puts(pattern_table[pat].name);
@@ -304,10 +211,10 @@ void ws2812_run_loop_execute() {
         for (int i = 0; i < 1000; ++i) {
             current_strip_out = strip0.data;
             current_strip_4color = false;
-            pattern_table[pat].pat(NUM_PIXELS, t);
+            pattern_table[pat].pat(NUM_PIXELS, t, current_strip_out, current_strip_4color);
             current_strip_out = strip1.data;
             current_strip_4color = true;
-            pattern_table[pat].pat(NUM_PIXELS, t);
+            pattern_table[pat].pat(NUM_PIXELS, t, current_strip_out, current_strip_4color);
 
             transform_strips(strips, count_of(strips), colors, NUM_PIXELS * 4, brightness);
             dither_values(colors, states[current], states[current ^ 1], NUM_PIXELS * 4);
@@ -345,9 +252,11 @@ void ws2812_task() {
         while(true);
     }
 
+    reset_delay_alarm_id = xTimerCreate("Reset delay", 10, pdTRUE, ( void * ) 0, reset_delay_complete);
+
     dma_init(pio, sm);
    
-    ws2812_run_loop_execute();
+    ws2812_run_loop_execute(); // does not return
     
     pio_remove_program_and_unclaim_sm(&ws2812_parallel_program, pio, sm, offset);
 }

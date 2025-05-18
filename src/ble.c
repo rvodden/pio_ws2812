@@ -43,10 +43,39 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
 static void nordic_spp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size)
 {
-    UNUSED(packet_type);
     UNUSED(channel);
-    UNUSED(packet);
-    UNUSED(size);
+    switch (packet_type){
+        case HCI_EVENT_PACKET:
+            if (hci_event_packet_get_type(packet) != HCI_EVENT_GATTSERVICE_META) break;
+            switch (hci_event_gattservice_meta_get_subevent_code(packet)){
+                case GATTSERVICE_SUBEVENT_SPP_SERVICE_CONNECTED:
+                    con_handle = gattservice_subevent_spp_service_connected_get_con_handle(packet);
+                    printf("Nordic SPP connected, con handle 0x%04x\n", con_handle);
+                    break;
+                case GATTSERVICE_SUBEVENT_SPP_SERVICE_DISCONNECTED:
+                    printf("Nordic SPP disconnected, con handle 0x%04x\n", con_handle);
+                    con_handle = HCI_CON_HANDLE_INVALID;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case RFCOMM_DATA_PACKET:
+            printf("RECV: ");
+            printf_hexdump(packet, size);
+            switch(packet[0]) {
+                case 1:
+                    printf("Colour Command\n");
+                    printf("Red: %u, Green: %u, Blue: %u\n", packet[1], packet[2], packet[3]);
+                    break;
+                default:
+                    printf("Unknown Command\n");
+                    break;
+            }
+            break;
+        default:
+            break;
+    };
 }
 
 static void configure_advertising() {
@@ -89,11 +118,10 @@ static void server_task(void *pvParameters)
 {
     printf("BLE Task has started\n");
     setup_ble();
-    // btstack_run_loop_execute(); /* does not return */
-    vTaskDelete( NULL );
+    vTaskSuspend( NULL );
 }
 
 void ble_init(void)
 {
-    int result = xTaskCreate(server_task, "BLEserver", 2048, NULL, tskIDLE_PRIORITY + 3, NULL);
+    int result = xTaskCreate(server_task, "BLEserver", 2048, NULL, tskIDLE_PRIORITY + 2, NULL);
 }

@@ -54,6 +54,7 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/main.c
     src/ble.c
     src/ws2812.c
+    src/patterns.c
 )
 target_compile_definitions(${PROJECT_NAME} PUBLIC
     CYW43_LWIP=0
