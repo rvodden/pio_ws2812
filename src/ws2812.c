@@ -20,6 +20,9 @@
 #include <timers.h>
 
 #include "patterns.h"
+#include "ws2812.h"
+
+extern SemaphoreHandle_t initSync;
 
 #define FRAC_BITS 4
 #define NUM_PIXELS 102
@@ -102,8 +105,6 @@ static value_bits_t states[2][NUM_PIXELS * 4];
 
 // example - strip 0 is RGB only
 static uint8_t strip0_data[NUM_PIXELS * 3];
-// example - strip 1 is RGBW
-static uint8_t strip1_data[NUM_PIXELS * 4];
 
 strip_t strip0 = {
         .data = strip0_data,
@@ -111,17 +112,9 @@ strip_t strip0 = {
         .frac_brightness = 0x40,
 };
 
-strip_t strip1 = {
-        .data = strip1_data,
-        .data_len = sizeof(strip1_data),
-        .frac_brightness = 0x100,
-};
-
 strip_t *strips[] = {
         &strip0,
-        &strip1,
 };
-
 
 // start of each value fragment (+1 for NULL terminator)
 static uintptr_t fragment_start[NUM_PIXELS * 4 + 1];
@@ -158,7 +151,7 @@ void dma_init(PIO pio, uint sm) {
     DMA_CB_CHANNEL_MASK = 1 << DMA_CB_CHANNEL;
     DMA_CB_CHANNELS_MASK = DMA_CHANNEL_MASK | DMA_CB_CHANNEL_MASK;
 
-    // main DMA channel outputs 8 word fragmenxTimerCreate);
+    // main DMA channel outputs 8 word fragment;
     dma_channel_config channel_config = dma_channel_get_default_config(DMA_CHANNEL);
     channel_config_set_dreq(&channel_config, pio_get_dreq(pio, sm, true));
     channel_config_set_chain_to(&channel_config, DMA_CB_CHANNEL);
@@ -200,8 +193,12 @@ void ws2812_run_loop_execute() {
     uint8_t *current_strip_out;
     bool current_strip_4color;
     
+    uint8_t pat = 0;
+    uint8_t new_pat;
+    BaseType_t ret;
     while (1) {
-        int pat = rand() % pattern_count;
+        // int pat = rand() % pattern_count;
+        
         int dir = (rand() >> 30) & 1 ? 1 : -1;
         // if (rand() & 1) dir = 0;
         puts(pattern_table[pat].name);
@@ -211,9 +208,6 @@ void ws2812_run_loop_execute() {
         for (int i = 0; i < 1000; ++i) {
             current_strip_out = strip0.data;
             current_strip_4color = false;
-            pattern_table[pat].pat(NUM_PIXELS, t, current_strip_out, current_strip_4color);
-            current_strip_out = strip1.data;
-            current_strip_4color = true;
             pattern_table[pat].pat(NUM_PIXELS, t, current_strip_out, current_strip_4color);
 
             transform_strips(strips, count_of(strips), colors, NUM_PIXELS * 4, brightness);
@@ -225,6 +219,16 @@ void ws2812_run_loop_execute() {
             t += dir;
             brightness++;
             if (brightness == (0x20 << FRAC_BITS)) brightness = 0;
+            if (xQueueReceive(command_queue, &new_pat, 0) == pdTRUE) {
+                if(new_pat >= pattern_count || pat < 0) {
+                    printf("Invalid pattern received: %d. Ignoring.\n", new_pat);
+                    continue;
+                } else {
+                    pat = new_pat + 3;
+                    printf("Received new pattern: %s\n", pattern_table[pat].name);
+                    i = 0;
+                }
+            }
         }
         memset(&states, 0, sizeof(states)); // clear out errors
     }
@@ -235,6 +239,10 @@ void ws2812_task() {
     uint sm;
     uint offset;
     
+    
+    // There appears to be some kind of race condition between btstack initialization and setting up
+    // DMAs. We suspend here, and then the btstack task will resume this task after initialization is done.
+    xSemaphoreTake(initSync, portMAX_DELAY);
     printf("WS2812 Task has started\n");
     
     // This will find a free pio and state machine for our program and load it for us
@@ -261,6 +269,6 @@ void ws2812_task() {
     pio_remove_program_and_unclaim_sm(&ws2812_parallel_program, pio, sm, offset);
 }
 
-void ws2812_init() {
-    int result = xTaskCreate(ws2812_task, "WS2812 task", 2048, NULL, tskIDLE_PRIORITY + 2, NULL);
+void ws2812_init(TaskHandle_t* created_task) {
+    int result = xTaskCreate(ws2812_task, "WS2812 task", 2048, NULL, tskIDLE_PRIORITY + 2, created_task);
 }

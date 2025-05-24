@@ -5,14 +5,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef void (*pattern)(uint32_t len, uint32_t t, uint8_t *current_strip_out, bool current_strip_4color);
+typedef uint8_t* (*pattern)(uint32_t len, uint32_t t, uint8_t *current_strip_out, bool current_strip_4color);
 
-struct pattern_t {
+typedef struct {
     pattern pat;
     const char *name;
-};
+} pattern_t;
 
-extern const struct pattern_t pattern_table[];
+extern const pattern_t pattern_table[];
 extern const uint8_t pattern_count;
 
 #endif // PATTERN_H

@@ -10,6 +10,7 @@
             "servertype": "openocd",
             "serverpath": "${userHome}/.pico-sdk/openocd/0.12.0+dev/openocd.exe",
             "gdbPath": "${command:raspberry-pi-pico.getGDBPath}",
+            "rtos":"FreeRTOS",
             "device": "${command:raspberry-pi-pico.getChipUppercase}",
             "configFiles": [
                 "interface/cmsis-dap.cfg",

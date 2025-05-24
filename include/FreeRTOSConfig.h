@@ -94,8 +94,12 @@
 
 /* Run time and task stats gathering related definitions. */
 #define configGENERATE_RUN_TIME_STATS           0
-#define configUSE_TRACE_FACILITY                1
+#define configUSE_TRACE_FACILITY                0
 #define configUSE_STATS_FORMATTING_FUNCTIONS    0
+
+// #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS  configure_timer_for_run_time_stats
+// #define portGET_RUN_TIME_COUNTER_VALUE          get_run_time_counter_value
+// #define configRECORD_STACK_HIGH_ADDRESS         1
 
 /* Co-routine related definitions. */
 #define configUSE_CO_ROUTINES                   0

@@ -6,6 +6,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(PICO_SDK_PATH "/home/rvodden/.pico-sdk/sdk/develop")
+
 # Initialise pico_sdk from installed location
 # (note this can come from environment, CMake cache etc)
 
@@ -35,8 +37,6 @@ if (NOT freertos_kernel_POPULATED)
         GIT_TAG            "V11.2.0"
     )
     set(FREERTOS_KERNEL_PATH "${CMAKE_CURRENT_BINARY_DIR}/freertos_kernel-src" CACHE STRING "FreeRTOS Location" FORCE)
-    include(CMakePrintHelpers)
-    cmake_print_variables(FREERTOS_KERNEL_PATH freertos_kernel_SOURCE_DIR freertos_kernel_POPULATED)
     add_library(freertos_config INTERFACE)
     target_include_directories(freertos_config INTERFACE ${CMAKE_SOURCE_DIR}/include)
     message(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/Community-Supported-Ports/GCC/RP2350_ARM_NTZ)

@@ -6,9 +6,14 @@
 #include <ble/gatt-service/nordic_spp_service_server.h>
 
 #include <FreeRTOS.h>
+#include <semphr.h>
 #include <task.h>
+#include <queue.h>
 
 #include "mygatt.h"
+
+#include "ble.h"
+#include "ws2812.h"
 
 static btstack_timer_source_t heartbeat;
 static hci_con_handle_t con_handle = HCI_CON_HANDLE_INVALID;
@@ -65,8 +70,25 @@ static void nordic_spp_packet_handler(uint8_t packet_type, uint16_t channel, uin
             printf_hexdump(packet, size);
             switch(packet[0]) {
                 case 1:
-                    printf("Colour Command\n");
-                    printf("Red: %u, Green: %u, Blue: %u\n", packet[1], packet[2], packet[3]);
+
+                    if (xQueueSend(command_queue, packet+1, 0) != pdTRUE) {
+                        printf("Failed to send command to queue - discarding.\n");
+                        break;
+                    }
+                    switch(packet[1]) {
+                        case 1: {
+                            printf("Red\n");
+                            break;
+                        }
+                        case 2: {
+                            printf("Green\n");
+                            break;
+                        }
+                        case 3: {
+                            printf("Blue\n");
+                            break;
+                        }
+                    }
                     break;
                 default:
                     printf("Unknown Command\n");
@@ -114,14 +136,16 @@ static void setup_ble()
     }
 }
 
-static void server_task(void *pvParameters)
+static void server_task(void *ws2812_task)
 {
     printf("BLE Task has started\n");
     setup_ble();
+    printf("Resuming WS2812 Task: %p\n", ws2812_task);
+    xSemaphoreGive(initSync);
     vTaskSuspend( NULL );
 }
 
-void ble_init(void)
+void ble_init(TaskHandle_t* ws2812_task, TaskHandle_t* created_task)
 {
-    int result = xTaskCreate(server_task, "BLEserver", 2048, NULL, tskIDLE_PRIORITY + 2, NULL);
+    int result = xTaskCreate(server_task, "BLEserver", 2048, ws2812_task, tskIDLE_PRIORITY + 2, created_task);
 }
